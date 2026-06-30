@@ -1,0 +1,61 @@
+version: "3.9"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Agent Budget Controller — Docker Compose
+# Local development stack: backend + PostgreSQL
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: abc_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: agent_budget_controller
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend ─────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: abc_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      API_VERSION: v1
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/agent_budget_controller
+      LOG_LEVEL: info
+      CORS_ORIGINS: http://localhost:3000
+      JWT_SECRET: local_dev_secret_replace_in_production_min_32_chars
+    ports:
+      - "4000:4000"
+    volumes:
+      # Mount source for live reload in development (override CMD with nodemon)
+      - ./src:/app/src:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
