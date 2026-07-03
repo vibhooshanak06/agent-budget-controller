@@ -65,4 +65,27 @@ async function updateTeam(id, data) {
   return prisma.team.update({ where: { id }, data });
 }
 
-module.exports = { createTeam, findTeamById, findTeamBySlug, listTeams, updateTeam };
+/**
+ * Delete a team by ID.
+ * Will fail with Prisma P2003 if agents exist (FK Restrict).
+ * @param {string} id - Team UUID
+ */
+async function deleteTeam(id) {
+  return prisma.team.delete({ where: { id } });
+}
+
+/**
+ * Atomically increment a team's budgetUsed by a cost amount.
+ * Uses Prisma's increment operator to avoid read-modify-write races.
+ *
+ * @param {string} id   - Team UUID
+ * @param {number} cost - Amount to add to budgetUsed
+ */
+async function incrementTeamBudgetUsed(id, cost) {
+  return prisma.team.update({
+    where: { id },
+    data: { budgetUsed: { increment: cost } },
+  });
+}
+
+module.exports = { createTeam, findTeamById, findTeamBySlug, listTeams, updateTeam, deleteTeam, incrementTeamBudgetUsed };

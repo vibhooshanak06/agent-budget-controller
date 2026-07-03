@@ -39,6 +39,14 @@ const envSchema = z.object({
   // Security
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
 
+  // OpenAI
+  OPENAI_API_KEY: z
+    .string()
+    .min(1, 'OPENAI_API_KEY is required')
+    .startsWith('sk-', 'OPENAI_API_KEY must start with sk-'),
+  DEFAULT_MODEL: z.string().default('gpt-4o-mini'),
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),

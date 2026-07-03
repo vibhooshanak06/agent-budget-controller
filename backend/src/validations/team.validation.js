@@ -3,9 +3,7 @@
 /**
  * team.validation.js
  *
- * Zod schemas for Team resource endpoints.
- * Schemas are exported individually so each route can pick exactly
- * what it needs to validate (body, query, params).
+ * Zod schemas for all Team endpoint request shapes.
  */
 
 const { z } = require('zod');
@@ -26,25 +24,28 @@ const budgetAmount = z
 // ── POST /teams ───────────────────────────────────────────────────────────────
 
 const createTeamSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(255, 'Name must be at most 255 characters').trim(),
-  slug: teamSlug,
+  name:         z.string().min(1, 'Name is required').max(255).trim(),
+  slug:         teamSlug,
   budget_limit: budgetAmount.default(0),
 });
+
+// ── PATCH /teams/:id ──────────────────────────────────────────────────────────
+
+const updateTeamSchema = z.object({
+  name:         z.string().min(1).max(255).trim().optional(),
+  budget_limit: budgetAmount.optional(),
+  status:       z.enum(['active', 'suspended']).optional(),
+}).refine(
+  (data) => Object.keys(data).length > 0,
+  { message: 'At least one field must be provided for update.' },
+);
 
 // ── GET /teams (query params) ─────────────────────────────────────────────────
 
 const listTeamsQuerySchema = z.object({
   status: z.enum(['active', 'suspended']).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page:   z.coerce.number().int().positive().default(1),
+  limit:  z.coerce.number().int().positive().max(100).default(20),
 });
 
-// ── PATCH /teams/:id (future) ─────────────────────────────────────────────────
-
-const updateTeamSchema = z.object({
-  name: z.string().min(1).max(255).trim().optional(),
-  budget_limit: budgetAmount.optional(),
-  status: z.enum(['active', 'suspended']).optional(),
-});
-
-module.exports = { createTeamSchema, listTeamsQuerySchema, updateTeamSchema };
+module.exports = { createTeamSchema, updateTeamSchema, listTeamsQuerySchema };

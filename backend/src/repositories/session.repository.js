@@ -46,4 +46,68 @@ async function closeSession(id) {
   });
 }
 
-module.exports = { createSession, findSessionById, updateSession, closeSession };
+/**
+ * Atomically increment a session's token counts and cost.
+ *
+ * @param {string} id                  - Session UUID
+ * @param {number} promptTokens        - Prompt tokens to add
+ * @param {number} completionTokens    - Completion tokens to add
+ * @param {number} cost                - Cost to add
+ */
+async function incrementSessionUsage(id, promptTokens, completionTokens, cost) {
+  return prisma.session.update({
+    where: { id },
+    data: {
+      totalPromptTokens:     { increment: promptTokens },
+      totalCompletionTokens: { increment: completionTokens },
+      totalCost:             { increment: cost },
+    },
+  });
+}
+
+/**
+ * Find all active sessions for an agent.
+ * @param {string} agentId - Agent UUID
+ */
+async function findActiveSessionsByAgent(agentId) {
+  return prisma.session.findMany({
+    where: { agentId, status: 'active' },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+/**
+ * List sessions with optional filters and pagination.
+ * @param {object} opts
+ * @param {string}  [opts.agentId]
+ * @param {string}  [opts.status]
+ * @param {number}  opts.skip
+ * @param {number}  opts.limit
+ */
+async function listSessions({ agentId, status, skip, limit }) {
+  const where = {};
+  if (agentId) where.agentId = agentId;
+  if (status)  where.status  = status;
+
+  const [sessions, total] = await prisma.$transaction([
+    prisma.session.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.session.count({ where }),
+  ]);
+
+  return { sessions, total };
+}
+
+module.exports = {
+  createSession,
+  findSessionById,
+  updateSession,
+  closeSession,
+  incrementSessionUsage,
+  findActiveSessionsByAgent,
+  listSessions,
+};

@@ -55,4 +55,23 @@ async function acknowledgeAlert(id) {
   });
 }
 
-module.exports = { createAlert, listAlerts, acknowledgeAlert };
+/**
+ * Check whether an unacknowledged alert of a given type already exists
+ * for an agent (or team). Used to prevent duplicate threshold warnings.
+ *
+ * @param {object} opts
+ * @param {string}  opts.type     - Alert type (e.g. 'budget_warning')
+ * @param {string}  [opts.agentId]
+ * @param {string}  [opts.teamId]
+ * @returns {Promise<boolean>}
+ */
+async function existsUnacknowledged({ type, agentId, teamId }) {
+  const where = { type, acknowledged: false };
+  if (agentId) where.agentId = agentId;
+  if (teamId) where.teamId = teamId;
+
+  const count = await prisma.alert.count({ where });
+  return count > 0;
+}
+
+module.exports = { createAlert, listAlerts, acknowledgeAlert, existsUnacknowledged };

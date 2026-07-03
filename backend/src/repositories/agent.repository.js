@@ -60,4 +60,47 @@ async function updateAgent(id, data) {
   return prisma.agent.update({ where: { id }, data });
 }
 
-module.exports = { createAgent, findAgentById, listAgents, updateAgent };
+/**
+ * Atomically increment an agent's budgetUsed by a cost amount.
+ *
+ * @param {string} id   - Agent UUID
+ * @param {number} cost - Amount to add to budgetUsed
+ */
+async function incrementAgentBudgetUsed(id, cost) {
+  return prisma.agent.update({
+    where: { id },
+    data: { budgetUsed: { increment: cost } },
+  });
+}
+
+/**
+ * Find an agent by ID with its parent team included.
+ * Used by budget checks that need both agent and team data.
+ *
+ * @param {string} id - Agent UUID
+ */
+async function findAgentWithTeam(id) {
+  return prisma.agent.findUnique({
+    where: { id },
+    include: { team: true },
+  });
+}
+
+/**
+ * Delete an agent by ID.
+ * Will fail with Prisma P2003 if sessions or usage logs exist (FK Restrict).
+ * @param {string} id - Agent UUID
+ */
+async function deleteAgent(id) {
+  return prisma.agent.delete({ where: { id } });
+}
+
+module.exports = {
+  createAgent,
+  findAgentById,
+  findAgentWithTeam,
+  listAgents,
+  updateAgent,
+  deleteAgent,
+  incrementAgentBudgetUsed,
+};

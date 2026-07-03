@@ -3,12 +3,19 @@
 /**
  * chat.validation.js
  *
- * Zod schemas for the POST /chat inference endpoint.
+ * Zod schema for the POST /chat inference endpoint.
+ *
+ * Model is optional at the API level — the service resolves precedence:
+ *   1. model from request body (if provided)
+ *   2. agent.modelPreference   (if set)
+ *   3. DEFAULT_MODEL env var   (fallback)
  */
 
 const { z } = require('zod');
 
-// Supported model identifiers (extend this list as new models are added)
+// Supported model identifiers — kept here as a reference for clients.
+// The service validates the resolved model against OpenAI; an unsupported
+// model will produce a clear OpenAI API error rather than a silent fallback.
 const SUPPORTED_MODELS = [
   'gpt-4o',
   'gpt-4o-mini',
@@ -22,13 +29,15 @@ const SUPPORTED_MODELS = [
 
 const chatRequestSchema = z.object({
   session_id: z.string().uuid('session_id must be a valid UUID'),
-  agent_id: z.string().uuid('agent_id must be a valid UUID'),
+  agent_id:   z.string().uuid('agent_id must be a valid UUID'),
+
+  // Model is optional — omit to use agent preference or DEFAULT_MODEL
   model: z
     .string()
-    .min(1, 'model is required')
-    .refine((m) => SUPPORTED_MODELS.includes(m), {
-      message: `model must be one of: ${SUPPORTED_MODELS.join(', ')}`,
-    }),
+    .max(100, 'model name is too long')
+    .optional()
+    .nullable(),
+
   prompt: z
     .string()
     .min(1, 'prompt is required')

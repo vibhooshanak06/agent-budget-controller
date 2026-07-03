@@ -3,89 +3,111 @@
 /**
  * chat.service.js
  *
- * Orchestrates the chat inference pipeline.
+ * Orchestrates the complete chat inference pipeline:
  *
- * Current state (Milestone 2):
- *   - Validates session and agent exist
- *   - Returns a stub response (placeholder until Milestone 3)
+ *   1. Load session, agent, team (done by budgetGuard middleware before this runs)
+ *   2. Call OpenAI with the resolved model
+ *   3. Calculate cost from token usage
+ *   4. Persist UsageLog + update all budget counters (in one transaction)
+ *   5. Evaluate post-request thresholds (async — does not delay response)
+ *   6. Return the LLM response to the caller
  *
- * Future milestones will insert:
- *   - Budget check         (Milestone 3 — BudgetService)
- *   - Model routing        (Milestone 4 — ModelRouterService)
- *   - Real LLM call        (Milestone 3)
- *   - Token metering       (Milestone 3 — MeteringService)
- *   - Usage logging        (Milestone 3 — UsageLoggerService)
- *   - Session cost update  (Milestone 3)
- *   - Alert generation     (Milestone 3 — AlertService)
+ * Budget enforcement (step 1) is handled by the budgetGuard middleware
+ * which runs BEFORE this service. If execution reaches here, the request
+ * is already approved.
+ *
+ * The loaded records (session, agent, team) are attached to req by the
+ * middleware and forwarded here via the payload to avoid redundant DB queries.
  */
 
-const sessionRepository = require('../repositories/session.repository');
-const agentRepository = require('../repositories/agent.repository');
-const AppError = require('../utils/AppError');
-const logger = require('../config/logger');
+const openaiService   = require('./openai.service');
+const meteringService = require('./metering.service');
+const usageLogger     = require('./usageLogger.service');
+const env             = require('../config/env');
+const logger          = require('../config/logger');
 
 /**
- * Process an incoming chat request through the governance pipeline.
+ * Process an approved chat request through the full inference pipeline.
  *
- * @param {object} payload - { session_id, agent_id, model, prompt }
+ * @param {object} payload
+ * @param {string}   payload.session_id
+ * @param {string}   payload.agent_id
+ * @param {string}   payload.model         - Requested model (validated by Zod)
+ * @param {string}   payload.prompt
+ * @param {object}   payload.session       - Pre-loaded session record (from middleware)
+ * @param {object}   payload.agent         - Pre-loaded agent record with team (from middleware)
+ * @param {object}   payload.team          - Pre-loaded team record (from middleware)
+ * @returns {Promise<object>} Response payload for the HTTP layer
  */
 async function processChat(payload) {
-  const { session_id, agent_id, model, prompt } = payload;
+  const { session_id, agent_id, model, prompt, session, agent, team } = payload;
 
-  // ── 1. Validate session ──────────────────────────────────────────────────
-  const session = await sessionRepository.findSessionById(session_id);
-  if (!session) {
-    throw new AppError(`Session '${session_id}' not found.`, 404, 'NOT_FOUND');
-  }
-  if (session.status !== 'active') {
-    throw new AppError(
-      `Session '${session_id}' is ${session.status} and cannot accept new requests.`,
-      400,
-      'SESSION_NOT_ACTIVE',
-    );
-  }
+  // Resolve model: use requested model, fall back to agent preference, then env default
+  const resolvedModel =
+    model ||
+    agent.modelPreference ||
+    env.DEFAULT_MODEL;
 
-  // ── 2. Validate agent ────────────────────────────────────────────────────
-  const agent = await agentRepository.findAgentById(agent_id);
-  if (!agent) {
-    throw new AppError(`Agent '${agent_id}' not found.`, 404, 'NOT_FOUND');
-  }
-  if (session.agentId !== agent_id) {
-    throw new AppError(
-      'session_id and agent_id do not match.',
-      400,
-      'SESSION_AGENT_MISMATCH',
-    );
-  }
+  logger.info(
+    { sessionId: session_id, agentId: agent_id, model: resolvedModel },
+    'Chat pipeline started',
+  );
 
-  // ── 3. Budget check (placeholder — Milestone 3) ──────────────────────────
-  // TODO: await budgetService.assertBudgetAvailable(agent);
+  // ── Call OpenAI ────────────────────────────────────────────────────────────
+  const llmResult = await openaiService.createChatCompletion({
+    model:  resolvedModel,
+    prompt,
+  });
 
-  // ── 4. Model routing (placeholder — Milestone 4) ─────────────────────────
-  // TODO: const resolvedModel = await modelRouterService.resolve(model, agent);
-  const resolvedModel = model;
+  // ── Calculate cost ─────────────────────────────────────────────────────────
+  const cost = meteringService.calculateCost(
+    llmResult.model,          // use actual resolved model from OpenAI response
+    llmResult.promptTokens,
+    llmResult.completionTokens,
+  );
 
-  // ── 5. LLM call (placeholder — Milestone 3) ──────────────────────────────
-  // TODO: const llmResponse = await modelRouterService.call(resolvedModel, prompt);
-  logger.info({ agentId: agent_id, sessionId: session_id, model: resolvedModel }, 'Chat request received (stub)');
-
-  const stubResponse = {
-    session_id,
-    model: resolvedModel,
-    response: '[Stub] LLM integration not yet implemented. This endpoint is ready for Milestone 3.',
-    usage: {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-      cost: 0,
+  logger.info(
+    {
+      sessionId:        session_id,
+      agentId:          agent_id,
+      model:            llmResult.model,
+      promptTokens:     llmResult.promptTokens,
+      completionTokens: llmResult.completionTokens,
+      totalTokens:      llmResult.totalTokens,
+      cost,
+      latencyMs:        llmResult.latencyMs,
     },
-    latency_ms: 0,
+    'LLM response received — persisting usage',
+  );
+
+  // ── Persist usage + update all budget counters ─────────────────────────────
+  await usageLogger.logUsage({
+    sessionId:        session_id,
+    agentId:          agent_id,
+    teamId:           team.id,
+    model:            llmResult.model,
+    promptTokens:     llmResult.promptTokens,
+    completionTokens: llmResult.completionTokens,
+    totalTokens:      llmResult.totalTokens,
+    cost,
+    latencyMs:        llmResult.latencyMs,
+    status:           'success',
+  });
+
+  // ── Return response ────────────────────────────────────────────────────────
+  return {
+    session_id,
+    model:    llmResult.model,
+    response: llmResult.text,
+    usage: {
+      prompt_tokens:     llmResult.promptTokens,
+      completion_tokens: llmResult.completionTokens,
+      total_tokens:      llmResult.totalTokens,
+      cost,
+    },
+    finish_reason: llmResult.finishReason,
+    latency_ms:    llmResult.latencyMs,
   };
-
-  // ── 6. Usage logging (placeholder — Milestone 3) ─────────────────────────
-  // TODO: await usageLoggerService.log({ session_id, agent_id, model, ...usage, latency_ms });
-
-  return stubResponse;
 }
 
 module.exports = { processChat };
