@@ -23,6 +23,7 @@
 const openaiService   = require('./openai.service');
 const meteringService = require('./metering.service');
 const usageLogger     = require('./usageLogger.service');
+const modelRouter     = require('./modelRouter.service');
 const env             = require('../config/env');
 const logger          = require('../config/logger');
 
@@ -43,13 +44,17 @@ async function processChat(payload) {
   const { session_id, agent_id, model, prompt, session, agent, team } = payload;
 
   // Resolve model: use requested model, fall back to agent preference, then env default
-  const resolvedModel =
-    model ||
-    agent.modelPreference ||
-    env.DEFAULT_MODEL;
+  const preferredModel = model || agent.modelPreference || env.DEFAULT_MODEL;
+
+  // Apply budget-aware model substitution
+  const { resolvedModel, substituted } = await modelRouter.resolveModel({
+    requestedModel: preferredModel,
+    agent,
+    sessionId:      session_id,
+  });
 
   logger.info(
-    { sessionId: session_id, agentId: agent_id, model: resolvedModel },
+    { sessionId: session_id, agentId: agent_id, requestedModel: preferredModel, resolvedModel, substituted },
     'Chat pipeline started',
   );
 
@@ -105,8 +110,10 @@ async function processChat(payload) {
       total_tokens:      llmResult.totalTokens,
       cost,
     },
-    finish_reason: llmResult.finishReason,
-    latency_ms:    llmResult.latencyMs,
+    finish_reason:      llmResult.finishReason,
+    latency_ms:         llmResult.latencyMs,
+    model_substituted:  substituted,
+    requested_model:    preferredModel,
   };
 }
 

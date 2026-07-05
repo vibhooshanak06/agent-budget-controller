@@ -1,0 +1,19 @@
+.wrapper {}
+
+.tooltip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: 12px;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ttModel {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: var(--space-1);
+}

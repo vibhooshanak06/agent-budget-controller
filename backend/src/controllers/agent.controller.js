@@ -39,4 +39,11 @@ const deleteAgent = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
-module.exports = { createAgent, listAgents, getAgent, updateAgent, deleteAgent };
+/** POST /api/v1/agents/:id/resume — resume a runaway-paused agent */
+const resumeAgent = asyncHandler(async (req, res) => {
+  const { resumeAgent: resume } = require('../services/runawayDetection.service');
+  await resume(req.params.id);
+  res.status(200).json({ status: 'success', message: 'Agent resumed.' });
+});
+
+module.exports = { createAgent, listAgents, getAgent, updateAgent, deleteAgent, resumeAgent };

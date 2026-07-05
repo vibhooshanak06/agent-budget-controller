@@ -1,35 +1,25 @@
-// schema.prisma
-//
-// Agent Budget Controller — Database Schema
-// Generator: @prisma/client
-// Datasource: PostgreSQL
-//
-// Run `npm run db:generate` after modifying this file.
-// Run `npm run db:migrate` to apply changes to the database.
+// schema.prisma — Agent Budget Controller (v2) — SQLite version
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 // ── Team ──────────────────────────────────────────────────────────────────────
-// A team groups one or more agents under a shared budget envelope.
-
 model Team {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String   @db.VarChar(255)
-  slug        String   @unique @db.VarChar(100)
-  budgetLimit Decimal  @default(0) @db.Decimal(12, 6) @map("budget_limit")
-  budgetUsed  Decimal  @default(0) @db.Decimal(12, 6) @map("budget_used")
-  status      String   @default("active") @db.VarChar(20)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  budgetLimit Float    @default(0) @map("budget_limit")
+  budgetUsed  Float    @default(0) @map("budget_used")
+  status      String   @default("active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  // Relations
   agents Agent[]
   alerts Alert[]
 
@@ -37,47 +27,40 @@ model Team {
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
-// An agent represents a single AI workload that consumes LLM tokens.
-// Each agent belongs to exactly one team.
-
 model Agent {
-  id              String   @id @default(uuid()) @db.Uuid
-  teamId          String   @db.Uuid @map("team_id")
-  name            String   @db.VarChar(255)
-  slug            String   @db.VarChar(100)
-  budgetLimit     Decimal  @default(0) @db.Decimal(12, 6) @map("budget_limit")
-  budgetUsed      Decimal  @default(0) @db.Decimal(12, 6) @map("budget_used")
-  modelPreference String?  @db.VarChar(100) @map("model_preference")
-  status          String   @default("active") @db.VarChar(20)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  id              String   @id @default(uuid())
+  teamId          String   @map("team_id")
+  name            String
+  slug            String
+  budgetLimit     Float    @default(0) @map("budget_limit")
+  budgetUsed      Float    @default(0) @map("budget_used")
+  modelPreference String?  @map("model_preference")
+  status          String   @default("active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  // Relations
-  team      Team      @relation(fields: [teamId], references: [id], onDelete: Restrict)
-  sessions  Session[]
-  usageLogs UsageLog[]
-  alerts    Alert[]
+  team                Team                @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  sessions            Session[]
+  usageLogs           UsageLog[]
+  alerts              Alert[]
+  modelSubstitutions  ModelSubstitution[]
 
   @@unique([teamId, slug])
   @@map("agents")
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
-// A session represents a single conversation or task window for an agent.
-// Token counts and costs accumulate across all UsageLog entries for the session.
-
 model Session {
-  id                    String    @id @default(uuid()) @db.Uuid
-  agentId               String    @db.Uuid @map("agent_id")
-  status                String    @default("active") @db.VarChar(20)
+  id                    String    @id @default(uuid())
+  agentId               String    @map("agent_id")
+  status                String    @default("active")
   totalPromptTokens     Int       @default(0) @map("total_prompt_tokens")
   totalCompletionTokens Int       @default(0) @map("total_completion_tokens")
-  totalCost             Decimal   @default(0) @db.Decimal(12, 6) @map("total_cost")
-  startedAt             DateTime  @default(now()) @map("started_at") @db.Timestamptz
-  endedAt               DateTime? @map("ended_at") @db.Timestamptz
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  totalCost             Float     @default(0) @map("total_cost")
+  startedAt             DateTime  @default(now()) @map("started_at")
+  endedAt               DateTime? @map("ended_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
 
-  // Relations
   agent     Agent      @relation(fields: [agentId], references: [id], onDelete: Restrict)
   usageLogs UsageLog[]
 
@@ -85,24 +68,19 @@ model Session {
 }
 
 // ── UsageLog ──────────────────────────────────────────────────────────────────
-// Immutable record of a single LLM request/response.
-// agent_id is denormalised here to support efficient per-agent queries
-// without always joining through sessions.
-
 model UsageLog {
-  id               String   @id @default(uuid()) @db.Uuid
-  sessionId        String   @db.Uuid @map("session_id")
-  agentId          String   @db.Uuid @map("agent_id")
-  model            String   @db.VarChar(100)
+  id               String   @id @default(uuid())
+  sessionId        String   @map("session_id")
+  agentId          String   @map("agent_id")
+  model            String
   promptTokens     Int      @default(0) @map("prompt_tokens")
   completionTokens Int      @default(0) @map("completion_tokens")
   totalTokens      Int      @default(0) @map("total_tokens")
-  cost             Decimal  @default(0) @db.Decimal(12, 6)
+  cost             Float    @default(0)
   latencyMs        Int?     @map("latency_ms")
-  status           String   @default("success") @db.VarChar(20)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  status           String   @default("success")
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  // Relations
   session Session @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   agent   Agent   @relation(fields: [agentId], references: [id], onDelete: Restrict)
 
@@ -112,25 +90,37 @@ model UsageLog {
 }
 
 // ── Alert ─────────────────────────────────────────────────────────────────────
-// An alert is generated when a budget threshold is crossed or an anomaly
-// is detected. team_id and agent_id are both nullable — an alert can be
-// scoped to either level, or both.
-
 model Alert {
-  id           String   @id @default(uuid()) @db.Uuid
-  teamId       String?  @db.Uuid @map("team_id")
-  agentId      String?  @db.Uuid @map("agent_id")
-  type         String   @db.VarChar(50)
-  severity     String   @default("info") @db.VarChar(20)
-  message      String   @db.Text
+  id           String   @id @default(uuid())
+  teamId       String?  @map("team_id")
+  agentId      String?  @map("agent_id")
+  type         String
+  severity     String   @default("info")
+  message      String
   acknowledged Boolean  @default(false)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at")
 
-  // Relations
   team  Team?  @relation(fields: [teamId], references: [id], onDelete: SetNull)
   agent Agent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
 
   @@index([teamId, acknowledged])
   @@index([agentId, acknowledged])
   @@map("alerts")
+}
+
+// ── ModelSubstitution ─────────────────────────────────────────────────────────
+model ModelSubstitution {
+  id             String   @id @default(uuid())
+  agentId        String   @map("agent_id")
+  sessionId      String?  @map("session_id")
+  requestedModel String   @map("requested_model")
+  resolvedModel  String   @map("resolved_model")
+  reason         String
+  utilization    Float    @default(0)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+  @@map("model_substitutions")
 }

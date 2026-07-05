@@ -68,6 +68,13 @@ async function emitBudgetWarning({ scope, entityId, entityName, utilization, age
   });
 
   logger.warn({ alertId: alert.id, scope, entityId, pct }, 'Budget warning alert created');
+
+  // Real-time push
+  try {
+    const { getIO } = require('../config/socket');
+    getIO().emit('alert_created', { ...alert, timestamp: new Date().toISOString() });
+  } catch (_) {}
+
   return alert;
 }
 

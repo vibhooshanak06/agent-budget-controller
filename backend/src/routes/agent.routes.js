@@ -26,5 +26,6 @@ router.post ('/',    validate(createAgentSchema),              agentController.c
 router.get  ('/:id',                                           agentController.getAgent);
 router.patch('/:id', validate(updateAgentSchema),              agentController.updateAgent);
 router.delete('/:id',                                          agentController.deleteAgent);
+router.post('/:id/resume',                                     agentController.resumeAgent);
 
 module.exports = router;

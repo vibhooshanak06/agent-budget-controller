@@ -101,6 +101,15 @@ async function logUsage({
     'Usage log persisted and budgets updated',
   );
 
+  // Emit real-time usage event (non-blocking)
+  try {
+    const { getIO } = require('../config/socket');
+    getIO().emit('usage_created', {
+      sessionId, agentId, teamId, model, cost, totalTokens, latencyMs,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (_) { /* safe */ }
+
   // Evaluate post-request thresholds asynchronously — must not block the response
   budgetService
     .evaluatePostRequestThresholds({ sessionId, agentId, teamId })

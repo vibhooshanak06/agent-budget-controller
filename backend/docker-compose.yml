@@ -1,20 +1,19 @@
 version: "3.9"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Agent Budget Controller — Docker Compose
-# Local development stack: backend + PostgreSQL
+# Agent Budget Controller v2 — Full Stack
+# Services: backend, frontend, postgres, redis
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: abc_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
+      POSTGRES_USER:     postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: agent_budget_controller
+      POSTGRES_DB:       agent_budget_controller
     ports:
       - "5432:5432"
     volumes:
@@ -22,39 +21,73 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout:  5s
+      retries:  5
 
-  # ── Backend ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: abc_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+
   backend:
     build:
-      context: .
+      context:    .
       dockerfile: Dockerfile
-      target: runner
+      target:     runner
     container_name: abc_backend
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
     environment:
-      NODE_ENV: development
-      PORT: 4000
-      API_VERSION: v1
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/agent_budget_controller
-      LOG_LEVEL: info
-      CORS_ORIGINS: http://localhost:3000
-      JWT_SECRET: local_dev_secret_replace_in_production_min_32_chars
+      NODE_ENV:              production
+      PORT:                  4000
+      API_VERSION:           v1
+      DATABASE_URL:          postgresql://postgres:password@postgres:5432/agent_budget_controller
+      REDIS_URL:             redis://redis:6379
+      LOG_LEVEL:             info
+      CORS_ORIGINS:          http://localhost:3000
+      JWT_SECRET:            ${JWT_SECRET}
+      OPENAI_API_KEY:        ${OPENAI_API_KEY}
+      DEFAULT_MODEL:         gpt-4o-mini
+      OPENAI_TIMEOUT_MS:     30000
+      REDIS_TTL_SECONDS:     300
+      RATE_LIMIT_WINDOW_MS:  60000
+      RATE_LIMIT_MAX_REQUESTS: 100
+      RUNAWAY_THRESHOLD_PCT: 20
+      CRON_RUNAWAY_DETECTION: "0 * * * *"
+      CRON_DAILY_CLEANUP:    "0 2 * * *"
+      CRON_MONTHLY_RESET:    "0 0 1 * *"
     ports:
       - "4000:4000"
-    volumes:
-      # Mount source for live reload in development (override CMD with nodemon)
-      - ./src:/app/src:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/v1/health || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout:  5s
       start_period: 20s
       retries: 3
+
+  frontend:
+    build:
+      context:    ../frontend
+      dockerfile: Dockerfile
+    container_name: abc_frontend
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }
+    environment:
+      VITE_API_URL:    http://backend:4000/api/v1
+      VITE_SOCKET_URL: http://backend:4000
+    ports:
+      - "3000:80"
 
 volumes:
   postgres_data:
